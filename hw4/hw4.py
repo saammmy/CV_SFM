@@ -1,5 +1,5 @@
 import os
-import cv2
+import cv2 as cv
 import numpy as np
 
 import open3d as o3d
@@ -30,9 +30,9 @@ if __name__ == '__main__':
     Im = np.empty((num_images, h_im, w_im, 3), dtype=np.uint8)
     for i in range(num_images):
         im_file = 'im/image{:07d}.jpg'.format(i + 1)
-        im = cv2.imread(im_file)
-        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        Im[i,:,:,:] = im
+        im = cv.imread(im_file)
+        im = cv.cvtColor(im, cv.COLOR_BGR2RGB)
+        Im[i, :, :, :] = im
 
     # Build feature track
     track = BuildFeatureTrack(Im, K)

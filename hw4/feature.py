@@ -130,15 +130,37 @@ def BuildFeatureTrack(Im, K):
     """
 
     # TODO Your code goes here
-    print(Im.shape)
-    print(Im)
+    # print(Im.shape)
+    # print(Im)
 
     # Read all images
-    imList = []
-    for i in range(1, 9):
-        im_file = '/im/*.jpg'.format(i)
+    im_list = []
+    for i in range(1, 6):
+        im_file = 'im/image000000{}.jpg'.format(i)
         im = cv2.imread(im_file)
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        imList.append(im)
+        im_list.append(im)
+
+    for i in range(len(im_list) - 1):
+        # Load consecutive images I_i and I_{i+1}
+        # TODO Your code goes here
+        img1, img2 = im_list[i], im_list[i + 1]
+
+        # Extract SIFT features
+        # TODO Your code goes here
+        sift = cv2.SIFT_create()
+        gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+        kp1, des1 = sift.detectAndCompute(gray1, None)
+        gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+        kp2, des2 = sift.detectAndCompute(gray2, None)
+        loc1 = np.array([kp1[idx].pt for idx in range(0, len(kp1))]).reshape(-1, 2)
+        loc2 = np.array([kp2[idx].pt for idx in range(0, len(kp2))]).reshape(-1, 2)
+
+        # Find the matches between two images (x1 <--> x2)
+        x1, x2 = MatchSIFT(loc1, des1, loc2, des2)
+
+    print('Matched Features.')
+
+    for i in range(len(im_list) - 1):
 
     return track
