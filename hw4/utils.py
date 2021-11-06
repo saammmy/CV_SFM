@@ -1,5 +1,5 @@
 import numpy as np
-
+from pyquaternion import Quaternion
 
 
 def Rotation2Quaternion(R):
@@ -16,11 +16,10 @@ def Rotation2Quaternion(R):
     q : ndarray of shape (4,)
         The unit quaternion (w, x, y, z)
     """
-    
-    # TODO Your code goes here
+
+    q = Quaternion(matrix=R)
 
     return q
-
 
 
 def Quaternion2Rotation(q):
@@ -37,7 +36,7 @@ def Quaternion2Rotation(q):
     R : ndarray of shape (3, 3)
         The rotation matrix
     """
-    
-    # TODO Your code goes here
+
+    R = q.rotation_matrix
 
     return R

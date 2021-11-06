@@ -73,7 +73,8 @@ if __name__ == '__main__':
 
             # Update 3D points
             # TODO Your code goes here
-        
+            pass
+
         # Run bundle adjustment
         valid_ind = X[:, 0] != -1
         X_ba = X[valid_ind, :]
