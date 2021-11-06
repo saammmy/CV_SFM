@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
+import torch
 
 
 def MatchSIFT(loc1, des1, loc2, des2):
@@ -32,9 +33,11 @@ def MatchSIFT(loc1, des1, loc2, des2):
     NNDR = 0.8
     nbrs = NearestNeighbors(n_neighbors=2).fit(des2)
     distances, indices = nbrs.kneighbors(des1, 2, return_distance=True)
-    print(len(distances))
-    print(indices, distances)
+
+    # print(len(distances))
+    # print(indices, distances)
     pairlist = []
+
     x1, x2, ind1 = [], [], []
     for i, distance in enumerate(distances):
         if distance[0] < NNDR * distance[1]:
@@ -108,7 +111,7 @@ def EstimateE_RANSAC(x1, x2, ransac_n_iter, ransac_thr):
     """
 
     # TODO Your code goes here
-
+    EstimateE(x1, x2)
     return E, inlier
 
 
@@ -133,34 +136,30 @@ def BuildFeatureTrack(Im, K):
     # print(Im.shape)
     # print(Im)
 
-    # Read all images
-    im_list = []
-    for i in range(1, 6):
-        im_file = 'im/image000000{}.jpg'.format(i)
-        im = cv2.imread(im_file)
-        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        im_list.append(im)
-
-    for i in range(len(im_list) - 1):
+    loc, des = [], []
+    loc = np.array([])
+    for i in range(len(Im[:, :, :, :]) - 1):
         # Load consecutive images I_i and I_{i+1}
-        # TODO Your code goes here
-        img1, img2 = im_list[i], im_list[i + 1]
 
+        # TODO Your code goes here
+        img = Im[i, :, :, :]
         # Extract SIFT features
         # TODO Your code goes here
         sift = cv2.SIFT_create()
-        gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-        kp1, des1 = sift.detectAndCompute(gray1, None)
-        gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-        kp2, des2 = sift.detectAndCompute(gray2, None)
-        loc1 = np.array([kp1[idx].pt for idx in range(0, len(kp1))]).reshape(-1, 2)
-        loc2 = np.array([kp2[idx].pt for idx in range(0, len(kp2))]).reshape(-1, 2)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        kp, des_temp = sift.detectAndCompute(gray, None)
+        loc1 = np.array([kp[idx].pt for idx in range(0, len(kp))]).reshape(-1, 2)
+        print(loc1)
+        np.append(loc, loc1)
+        des.append(des_temp)
 
+    print('Loc: ', loc)
+    print('Desc: ', des)
+    # print('Matched Features.')
+    # trace = torch.full((len(Im[:, :, :, :]), feature_lenght, 2), -1)
+
+    for i in range(len(Im[i, :, :, :]) - 1):
         # Find the matches between two images (x1 <--> x2)
-        x1, x2 = MatchSIFT(loc1, des1, loc2, des2)
-
-    print('Matched Features.')
-
-    for i in range(len(im_list) - 1):
+        x1, x2, ind = MatchSIFT(loc1, des1, loc2, des2)
 
     return track
