@@ -164,25 +164,29 @@ def BuildFeatureTrack(Im, K):
         track_i = torch.full((len(Im[:, :, :, :]), n_features, 2), -1)
 
         for j in range(i + 1, len(Im[:, :, :, :])):
-            # print(j)
-
             # Find the matches between two images (x1 <--> x2)
             x1, x2, ind = MatchSIFT(loc[i], des[i], loc[j], des[j])
-            # print(x1[0], loc[i][ind[0]])
+
             # Homogenize coordinates to [x y 1]
             [(x1[idx]).append(1) for idx in range(len(x1))]
-            # print(x1)
 
-            for idx1 in range(0, len(x2)):
-                (x2[idx1]).append(1)
+            # print(x2[14])
+            X2 = []
+            idx = 0
+            while (idx < len(x2)):
+                # print(x2[idx])
+                X2.append([x2[idx][0], x2[idx][1], 1])
+                # print(x2[idx])
+                idx += 1
 
-            print(x2)
+            # X2 = np.array(X2)
+            # print(X2.shape)
+
             # Normalize coordinate by multiplying the inverse of intrinsics
             x1 = [np.dot(K_inv, x1[idx]) for idx in range(len(x1))]
-            x2 = [np.dot(K_inv, x2[idx]) for idx in range(len(x2))]
+            x2 = [np.dot(K_inv, X2[idx]) for idx in range(len(X2))]
 
-            EstimateE_RANSAC(x1, x2, )
-            break
+            EstimateE_RANSAC(x1, x2, ransac_n_iter=500, ransac_thr=3)
             pass
 
     return track
