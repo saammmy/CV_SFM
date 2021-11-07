@@ -45,7 +45,7 @@ def MatchSIFT(loc1, des1, loc2, des2):
             x2.append(loc2[indices[i][0]])
             ind1.append(i)
 
-    # print(x1, x2)
+    # print(x2)
 
     return x1, x2, ind1
 
@@ -111,7 +111,7 @@ def EstimateE_RANSAC(x1, x2, ransac_n_iter, ransac_thr):
     """
 
     # TODO Your code goes here
-    EstimateE(x1, x2)
+    E = EstimateE(x1, x2)
     return E, inlier
 
 
@@ -137,29 +137,52 @@ def BuildFeatureTrack(Im, K):
     # print(Im)
 
     loc, des = [], []
-    loc = np.array([])
-    for i in range(len(Im[:, :, :, :]) - 1):
-        # Load consecutive images I_i and I_{i+1}
+    n_features = 0
 
+    for i in range(len(Im[:, :, :, :])):
         # TODO Your code goes here
         img = Im[i, :, :, :]
         # Extract SIFT features
         # TODO Your code goes here
         sift = cv2.SIFT_create()
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        kp, des_temp = sift.detectAndCompute(gray, None)
-        loc1 = np.array([kp[idx].pt for idx in range(0, len(kp))]).reshape(-1, 2)
-        print(loc1)
-        np.append(loc, loc1)
+        kp_temp, des_temp = sift.detectAndCompute(gray, None)
+
+        # print(des_temp.shape[0])
+        n_features += des_temp.shape[0]
+        des_temp = des_temp.tolist()
+
+        kp_temp = [list(kp_temp[idx].pt) for idx in range(0, len(kp_temp))]
+
+        loc.append(kp_temp)
         des.append(des_temp)
 
-    print('Loc: ', loc)
-    print('Desc: ', des)
-    # print('Matched Features.')
-    # trace = torch.full((len(Im[:, :, :, :]), feature_lenght, 2), -1)
+    track = torch.full((len(Im[:, :, :, :]), n_features, 2), -1)
+    K_inv = np.linalg.inv(K)
 
-    for i in range(len(Im[i, :, :, :]) - 1):
-        # Find the matches between two images (x1 <--> x2)
-        x1, x2, ind = MatchSIFT(loc1, des1, loc2, des2)
+    for i in range(len(Im[:, :, :, :])):
+        track_i = torch.full((len(Im[:, :, :, :]), n_features, 2), -1)
+
+        for j in range(i + 1, len(Im[:, :, :, :])):
+            # print(j)
+
+            # Find the matches between two images (x1 <--> x2)
+            x1, x2, ind = MatchSIFT(loc[i], des[i], loc[j], des[j])
+            # print(x1[0], loc[i][ind[0]])
+            # Homogenize coordinates to [x y 1]
+            [(x1[idx]).append(1) for idx in range(len(x1))]
+            # print(x1)
+
+            for idx1 in range(0, len(x2)):
+                (x2[idx1]).append(1)
+
+            print(x2)
+            # Normalize coordinate by multiplying the inverse of intrinsics
+            x1 = [np.dot(K_inv, x1[idx]) for idx in range(len(x1))]
+            x2 = [np.dot(K_inv, x2[idx]) for idx in range(len(x2))]
+
+            EstimateE_RANSAC(x1, x2, )
+            break
+            pass
 
     return track

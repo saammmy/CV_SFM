@@ -19,11 +19,10 @@ def GetCameraPoseFromE(E):
     C_set : ndarray of shape (4, 3)
         The set of four camera centers
     """
-    
+
     # TODO Your code goes here
 
     return R_set, C_set
-
 
 
 def Triangulation(P1, P2, track1, track2):
@@ -46,11 +45,10 @@ def Triangulation(P1, P2, track1, track2):
     X : ndarray of shape (n, 3)
         The set of 3D points
     """
-    
+
     # TODO Your code goes here
 
     return X
-
 
 
 def EvaluateCheirality(P1, P2, X):
@@ -72,16 +70,15 @@ def EvaluateCheirality(P1, P2, X):
         The binary vector indicating the cheirality condition, i.e., the entry 
         is 1 if the point is in front of both cameras, and 0 otherwise
     """
-    
+
     # TODO Your code goes here
 
     return valid_index
 
 
-
 def EstimateCameraPose(track1, track2):
     """
-    Return the best pose conﬁguration
+    Return the best pose configuration
 
     Parameters
     ----------
@@ -99,7 +96,9 @@ def EstimateCameraPose(track1, track2):
     X : ndarray of shape (F, 3)
         The set of reconstructed 3D points
     """
-    
+
     # TODO Your code goes here
+
+    GetCameraPoseFromE(E)
 
     return R, C, X
