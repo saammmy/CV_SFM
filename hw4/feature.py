@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
+from skimage.measure import ransac
+from skimage.transform import FundamentalMatrixTransform
 import torch
 
 
@@ -64,8 +66,9 @@ def EstimateE(x1, x2):
     E : ndarray of shape (3, 3)
         The essential matrix
     """
-    # print(x1[0, 0])
+
     # TODO Your code goes here
+    assert x1.shape == x2.shape, f"Shapes do not match {x1.shape} != {x2.shape}"
     X = np.zeros((8, 9))
     for i in range(8):
         X[i] = [x1[i, 0] * x2[i, 0], x1[i, 0] * x2[i, 1], x1[i, 0] * x2[i, 2],
@@ -88,9 +91,9 @@ def EstimateE(x1, x2):
     S[0, 0] = S[1, 1] = (sigma[0] + sigma[1]) / 2
     E = np.matmul((np.matmul(U, S)), V.transpose())
 
-    lines1 = cv2.computeCorrespondEpilines(x2, F)
-    lines1 = lines1.reshape(-1, 3)
-    print(lines1)
+    # lines1 = cv2.computeCorrespondEpilines(x2, F)
+    # lines1 = lines1.reshape(-1, 3)
+    # print(lines1)
     return E
 
 
@@ -118,68 +121,43 @@ def EstimateE_RANSAC(x1, x2, ransac_n_iter, ransac_thr):
     """
 
     # TODO Your code goes here
-    E = EstimateE(x1, x2)
 
     ransac_n_iter = 500
-    kk = 0
+    # kk = 0
+
+    highest_number_of_happy_points = -1
+    best_estimated_essential_matrix = np.identity(3)
+
     for r in range(ransac_n_iter):
-        s1 = np.random.randint(x1.shape[0], size=4)
-        s2 = np.random.randint(x2.shape[0], size=4)
+        s1 = np.random.randint(x1.shape[0], size=8)
+        s2 = np.random.randint(x2.shape[0], size=8)
         x1_s = x1[s1]
         x2_s = x2[s1]
-        if collinear(x1_s[0], x1_s[1], x1_s[2]) or collinear(x1_s[0], x1_s[1], x1_s[3]) or \
-                collinear(x1_s[1], x1_s[2], x1_s[3]) or collinear(x1_s[0], x1_s[2], x1_s[3]):
-            continue
-        # print(s1, s2)
-        A = []
-        b = []
-        for i in range(len(x1_s)):
-            xA, yA = x1_s[i][0], x1_s[i][1]
-            xB, yB = x2_s[i][0], x2_s[i][1]
-            A.append([xA, yA, 1, 0, 0, 0, -xA * xB, -yA * xB])
-            A.append([0, 0, 0, xA, yA, 1, -xA * yB, -yA * yB])
-            b.append([xB])
-            b.append([yB])
 
-        A = np.matrix(A)
-        b = np.matrix(b)
-        x = np.linalg.inv(A.T @ A) @ A.T @ b
-        H = np.concatenate((x, np.array([[1]])), axis=0).reshape(3, 3)
+        E = EstimateE(x1_s, x2_s)
 
+        ''' get the eMat with the lowest error
+        X'EX = 0 or in our case the error
+        *[x2, y2, 1] * E * [x1, y1, 1] = 0 Found here
+        Found here https://www.cc.gatech.edu/~hays/compvision/proj3/
+        '''
+        # sample_evaluation = []
         inlier_idx = []
-        for i, (point1, point2) in enumerate(zip(x1, x2)):
-            p2_homo = H * ((np.append(point1, 1)).reshape(3, 1))
-            p2_car = (p2_homo / p2_homo[2])[:2]
-            if np.linalg.norm(p2_car - point2.reshape(2, 1)) < ransac_thr:
+        for i in range(len(x1)):
+            E_dot_x2 = np.matmul(E, x2[i])
+            dst = np.sum(x1[i] * E_dot_x2, axis=0)
+
+            error = dst / (np.linalg.norm(x1[i]) * np.linalg.norm(E_dot_x2))
+            if np.abs(error) < ransac_thr:
                 inlier_idx.append(i)
-        if len(inlier_idx) > kk:
-            kk = len(inlier_idx)
-            inlier_final = np.array(inlier_idx)
-            H_final = H
 
-    highest_number_of_happy_points = -1;
-    best_estimated_essential_matrix = Identity;
+            if len(inlier_idx) > highest_number_of_happy_points:
+                highest_number_of_happy_points = len(inlier_idx)
+                best_estimated_essential_matrix = E
+                inlier = np.array(inlier_idx)
 
-    for iter=1 to max_iter_number:
-        n_pts = get_n_random_pts(P);
-
-        E = compute_essential(n_pts);
-
-        number_of_happy_points = 0;
-        for pt in P:
-            err = cost_function(pt, E); // for example x ^ TFx as you propose, or X ^ TEX with the essential.
-            if (err < some_threshold):
-                number_of_happy_points += 1;
-        if (number_of_happy_points > highest_number_of_happy_points):
-            highest_number_of_happy_points = number_of_happy_points;
-            best_estimated_essential_matrix = E;
+    E = best_estimated_essential_matrix
     return E, inlier
-
-
-def collinear(p0, p1, p2):
-    x1, y1 = p1[0] - p0[0], p1[1] - p0[1]
-    x2, y2 = p2[0] - p0[0], p2[1] - p0[1]
-    return abs(x1 * y2 - x2 * y1) < 1e-12
 
 
 def BuildFeatureTrack(Im, K):
@@ -232,29 +210,28 @@ def BuildFeatureTrack(Im, K):
             # Find the matches between two images (x1 <--> x2)
             x1, x2, ind = MatchSIFT(loc[i], des[i], loc[j], des[j])
 
-            # Homogenize coordinates to [x y 1]
-            [(x1[idx]).append(1) for idx in range(len(x1))]
+            # Homogenize coordinates to [x1 y1 1]
+            X1 = []
+            idx = 0
+            while idx < len(x1):
+                X1.append([x1[idx][0], x1[idx][1], 1])
+                idx += 1
 
-            # print(x2[14])
+            # Homogenize coordinates to [x2 y2 1]
             X2 = []
             idx = 0
-            while (idx < len(x2)):
+            while idx < len(x2):
                 X2.append([x2[idx][0], x2[idx][1], 1])
                 idx += 1
 
-            # X2 = np.array(X2)
-            # print(X2.shape)
-
             # Normalize coordinate by multiplying the inverse of intrinsics
-            x1 = [np.dot(K_inv, x1[idx]) for idx in range(len(x1))]
+            x1 = [np.dot(K_inv, X1[idx]) for idx in range(len(X1))]
             x2 = [np.dot(K_inv, X2[idx]) for idx in range(len(X2))]
 
             x1 = np.array(x1)
             x2 = np.array(x2)
 
-            EstimateE_RANSAC(x1, x2, ransac_n_iter=500, ransac_thr=3)
-
-
+            E, inlier = EstimateE_RANSAC(x1, x2, ransac_n_iter=500, ransac_thr=0.5)
             pass
 
     return track

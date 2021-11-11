@@ -15,7 +15,6 @@ from reconstruction import FindMissingReconstruction
 from reconstruction import Triangulation_nl
 from reconstruction import RunBundleAdjustment
 
-
 if __name__ == '__main__':
     K = np.asarray([
         [350, 0, 480],
@@ -37,8 +36,8 @@ if __name__ == '__main__':
     # Build feature track
     track = BuildFeatureTrack(Im, K)
 
-    track1 = track[0,:,:]
-    track2 = track[1,:,:]
+    track1 = track[0, :, :]
+    track2 = track[1, :, :]
 
     # Estimate ﬁrst two camera poses
     R, C, X = EstimateCameraPose(track1, track2)
@@ -83,13 +82,13 @@ if __name__ == '__main__':
         P[:i + 1, :, :] = P_new
         X[valid_ind, :] = X_new
 
-        P[:i+1,:,:] = P_new
-        X[valid_ind,:] = X_new
+        P[:i + 1, :, :] = P_new
+        X[valid_ind, :] = X_new
 
         ###############################################################
         # Save the camera coordinate frames as meshes for visualization
         m_cam = None
-        for j in range(i+1):
+        for j in range(i + 1):
             R_d = P[j, :, :3]
             C_d = -R_d.T @ P[j, :, 3]
             T = np.eye(4)
@@ -101,21 +100,22 @@ if __name__ == '__main__':
                 m_cam = m
             else:
                 m_cam += m
-        o3d.io.write_triangle_mesh('{}/cameras_{}.ply'.format(output_dir, i+1), m_cam)
+        o3d.io.write_triangle_mesh('{}/cameras_{}.ply'.format(output_dir, i + 1), m_cam)
 
         # Save the reconstructed points as point cloud for visualization
-        X_new_h = np.hstack([X_new, np.ones((X_new.shape[0],1))])
+        X_new_h = np.hstack([X_new, np.ones((X_new.shape[0], 1))])
         colors = np.zeros_like(X_new)
         for j in range(i, -1, -1):
-            x = X_new_h @ P[j,:,:].T
+            x = X_new_h @ P[j, :, :].T
             x = x / x[:, 2, np.newaxis]
-            mask_valid = (x[:,0] >= -1) * (x[:,0] <= 1) * (x[:,1] >= -1) * (x[:,1] <= 1)
-            uv = x[mask_valid,:] @ K.T
+            mask_valid = (x[:, 0] >= -1) * (x[:, 0] <= 1) * (x[:, 1] >= -1) * (x[:, 1] <= 1)
+            uv = x[mask_valid, :] @ K.T
             for k in range(3):
-                interp_fun = RectBivariateSpline(np.arange(h_im), np.arange(w_im), Im[j,:,:,k].astype(float)/255, kx=1, ky=1)
-                colors[mask_valid, k] = interp_fun(uv[:,1], uv[:,0], grid=False)
+                interp_fun = RectBivariateSpline(np.arange(h_im), np.arange(w_im), Im[j, :, :, k].astype(float) / 255,
+                                                 kx=1, ky=1)
+                colors[mask_valid, k] = interp_fun(uv[:, 1], uv[:, 0], grid=False)
 
         ind = np.sqrt(np.sum(X_ba ** 2, axis=1)) < 200
         pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(X_new[ind]))
         pcd.colors = o3d.utility.Vector3dVector(colors[ind])
-        o3d.io.write_point_cloud('{}/points_{}.ply'.format(output_dir, i+1), pcd)
+        o3d.io.write_point_cloud('{}/points_{}.ply'.format(output_dir, i + 1), pcd)
