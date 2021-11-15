@@ -4,6 +4,7 @@ from sklearn.neighbors import NearestNeighbors
 from skimage.measure import ransac
 from skimage.transform import FundamentalMatrixTransform
 import torch
+import pickle, pandas as pd
 
 
 def MatchSIFT(loc1, des1, loc2, des2):
@@ -201,11 +202,12 @@ def BuildFeatureTrack(Im, K):
         des.append(des_temp)
 
     track = torch.full((len(Im[:, :, :, :]), n_features, 2), -1)
+
     K_inv = np.linalg.inv(K)
 
     for i in range(len(Im[:, :, :, :])):
-        track_i = torch.full((len(Im[:, :, :, :]), n_features, 2), -1)
-
+        # track_i = torch.full((len(Im[:, :, :, :]), n_features, 2), -1)
+        track_i = np.ones((len(Im[:, :, :, :]), n_features, 2)) * -1
         for j in range(i + 1, len(Im[:, :, :, :])):
             # Find the matches between two images (x1 <--> x2)
             x1, x2, ind = MatchSIFT(loc[i], des[i], loc[j], des[j])
@@ -230,8 +232,33 @@ def BuildFeatureTrack(Im, K):
 
             x1 = np.array(x1)
             x2 = np.array(x2)
+            print(x1.shape)
 
             E, inlier = EstimateE_RANSAC(x1, x2, ransac_n_iter=500, ransac_thr=0.5)
-            pass
+
+            # Removing Homogenization
+            x1 = x1[:, :-1]
+            x2 = x2[:, :-1]
+
+            # print(torch.from_numpy(x1[inlier]))
+
+            for inlier_index in inlier:
+                print(inlier_index)
+                # row, col = np.where(np.isclose(x2, x2[index]))
+                print(track_i[i, ind[inlier_index], :])
+                print(torch.from_numpy(x1[inlier_index]))
+                # track_i[i, ind[inlier_index], :] = torch.from_numpy(x1[inlier_index])
+                # track_i[j, ind[inlier_index], :] = torch.from_numpy(x2[inlier_index])
+                track_i[i, ind[inlier_index], :] = x1[inlier_index]
+                track_i[j, ind[inlier_index], :] = x2[inlier_index]
+                print(track_i[i, ind[inlier_index], :])
+                print(track_i[j, ind[inlier_index], :])
+        #     Points1 = pd.DataFrame(x1[inlier])
+        #     Points1.to_csv('Test.csv')
+        # print("Current Track_i", track_i)
+
+        # px = pd.DataFrame(track_i)
+        # px.to_csv('Test1.csv')
+        # pickle.dump(track_i, open('test.pkl', 'wb'))
 
     return track
