@@ -21,6 +21,28 @@ def GetCameraPoseFromE(E):
     """
 
     # TODO Your code goes here
+    U, S, V = np.linalg.svd(E)
+    if np.linalg.det(np.dot(U, V)) < 0:
+        V = -V
+
+    # ! create matrix W and Z (Hartley's Book pp 258)
+    W = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+
+    t = U[:, 2].reshape(1, -1).T
+
+    # ! 4 possible transformations
+    transformations = [
+        np.vstack((np.hstack((U @ W.T @ V, t)), [0, 0, 0, 1])),
+        np.vstack((np.hstack((U @ W.T @ V, -t)), [0, 0, 0, 1])),
+        np.vstack((np.hstack((U @ W @ V, t)), [0, 0, 0, 1])),
+        np.vstack((np.hstack((U @ W @ V, -t)), [0, 0, 0, 1])),
+    ]
+    # return transformations
+
+    R_set = np.vstack(np.hstack(U @ W.T @ V), np.hstack(U @ W.T @ V),
+                      np.hstack(U @ W @ V), np.hstack(U @ W @ V))
+
+    C_set = np.vstack(t, -t, t, -t)
 
     return R_set, C_set
 
