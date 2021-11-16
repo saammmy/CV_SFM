@@ -3,14 +3,14 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from skimage.measure import ransac
 from skimage.transform import FundamentalMatrixTransform
-#import torch
+# import torch
 import pickle, pandas as pd
 
 
 def MatchSIFT(loc1, des1, loc2, des2):
     """
     Find the matches of SIFT features between two images
-    
+
     Parameters
     ----------
     loc1 : ndarray of shape (n1, 2)
@@ -200,19 +200,12 @@ def BuildFeatureTrack(Im, K):
 
         loc.append(kp_temp)
         des.append(des_temp)
-
-    # track = torch.full((len(Im[:, :, :, :]), n_features, 2), -1)
-    track = np.ones((len(Im[:, :, :, :]), n_features, 2)) * -1
+        
+    # Numpy Initialization for Feature Track
+    track_i = np.ones((len(Im[:, :, :, :]), n_features, 2)) * -1
 
     K_inv = np.linalg.inv(K)
-    track_i = np.ones((len(Im[:, :, :, :]), n_features, 2)) * -1
     for i in range(len(Im[:, :, :, :])):
-        # Tensor Initialization for Feature Track
-        # track_i = torch.full((len(Im[:, :, :, :]), n_features, 2), -1)
-
-        # Numpy Initialization for Feature Track
-        
-
         for j in range(i + 1, len(Im[:, :, :, :])):
             # Find the matches between two images (x1 <--> x2)
             x1, x2, ind = MatchSIFT(loc[i], des[i], loc[j], des[j])
@@ -240,62 +233,18 @@ def BuildFeatureTrack(Im, K):
             # print(x1.shape)
 
             E, inlier = EstimateE_RANSAC(x1, x2, ransac_n_iter=500, ransac_thr=0.5)
-            
+
             # Removing Homogenization
             x1 = x1[:, :-1]
             x2 = x2[:, :-1]
-            if i==0 and j==1:
-                print("Indices of Matched Features")
-                print(ind)
-                print("Inliers Index in Index List")
-                print(inlier[0:50])
-                print("X1 till 50 values=")
-                print(x1[0:50,:])
-                print("X2 till 50 values=")
-                print(x2[0:50,:])
-                
 
-            # print(torch.from_numpy(x1[inlier]))
-
+            # Update Track with only inliers of RANSAC
             for inlier_index in inlier:
-                # print(inlier_index)
-                # row, col = np.where(np.isclose(x2, x2[index]))
-                # print(track_i[i, ind[inlier_index], :])
-                # print(torch.from_numpy(x1[inlier_index]))
-                # track_i[i, ind[inlier_index], :] = torch.from_numpy(x1[inlier_index])
-                # track_i[j, ind[inlier_index], :] = torch.from_numpy(x2[inlier_index])
-                
                 track_i[i, ind[inlier_index], :] = x1[inlier_index]
                 track_i[j, ind[inlier_index], :] = x2[inlier_index]
-                
 
-                # print(track_i[i, ind[inlier_index], :])
-                # print(track_i[j, ind[inlier_index], :])
-            if i==0 and j==1:
-                print("Img 0 ", track_i[0,4,:])
-                print("Img 1 ", track_i[1,4,:])
-        #     Points1 = pd.DataFrame(x1[inlier])
-        #     Points1.to_csv('Test.csv')
-        # print("Current Track_i", track_i)
-        
-        
-        ### Remove features in track_i that have not been matched for i + 1, · · ·, N.
-        # for j in range(len(Im[:, :, :, :]) - 1):
-        #     np.any(j < 0)
-        # Not needed?
-
-        
-        ### track = track ∪ track_i
-
-        # px = pd.DataFrame(track_i)
-        # px.to_csv('Test1.csv')
-        # pickle.dump(track_i, open('test.pkl', 'wb'))
-    #print(np.shape(track_i))
-    track=track_i
-    filename = 'track'
-    outfile = open(filename,'wb')
-    pickle.dump(track,outfile)
+    track = track_i
+    outfile = open('track.pkl', 'wb')
+    pickle.dump(track, outfile)
     outfile.close()
-    print("Img1 ",track[0,4,:])
-    print("Img2 ",track[1,4,:])
     return track

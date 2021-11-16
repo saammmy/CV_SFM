@@ -15,8 +15,6 @@ from reconstruction import FindMissingReconstruction
 from reconstruction import Triangulation_nl
 from reconstruction import RunBundleAdjustment
 
-import pickle
-
 if __name__ == '__main__':
     K = np.asarray([
         [350, 0, 480],
