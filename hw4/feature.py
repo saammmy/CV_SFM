@@ -265,6 +265,7 @@ def BuildFeatureTrack(Im, K):
         ### Remove features in track_i that have not been matched for i + 1, · · ·, N.
         # for j in range(len(Im[:, :, :, :]) - 1):
         #     np.any(j < 0)
+        # Not needed?
 
         
         ### track = track ∪ track_i
