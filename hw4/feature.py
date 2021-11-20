@@ -181,8 +181,8 @@ def BuildFeatureTrack(Im, K):
     # TODO Your code goes here
 
     loc, des = [], []
-    n_features = 0
-
+    n_features = []
+    
     for i in range(len(Im[:, :, :, :])):
         # TODO Your code goes here
         img = Im[i, :, :, :]
@@ -193,7 +193,7 @@ def BuildFeatureTrack(Im, K):
         kp_temp, des_temp = sift.detectAndCompute(gray, None)
 
         # print(des_temp.shape[0])
-        n_features += des_temp.shape[0]
+        n_features.append(des_temp.shape[0])
         des_temp = des_temp.tolist()
 
         kp_temp = [list(kp_temp[idx].pt) for idx in range(0, len(kp_temp))]
@@ -202,8 +202,8 @@ def BuildFeatureTrack(Im, K):
         des.append(des_temp)
         
     # Numpy Initialization for Feature Track
-    track_i = np.ones((len(Im[:, :, :, :]), n_features, 2)) * -1
-
+    track_i = np.ones((len(Im[:, :, :, :]), sum(n_features), 2)) * -1
+    prev_n_features = 0
     K_inv = np.linalg.inv(K)
     for i in range(len(Im[:, :, :, :])):
         for j in range(i + 1, len(Im[:, :, :, :])):
@@ -240,9 +240,11 @@ def BuildFeatureTrack(Im, K):
 
             # Update Track with only inliers of RANSAC
             for inlier_index in inlier:
-                track_i[i, ind[inlier_index], :] = x1[inlier_index]
-                track_i[j, ind[inlier_index], :] = x2[inlier_index]
-
+                track_i[i,prev_n_features+ ind[inlier_index], :] = x1[inlier_index]
+                track_i[j,prev_n_features+ ind[inlier_index], :] = x2[inlier_index]
+            
+            
+        prev_n_features = prev_n_features + n_features[i]
     track = track_i
     outfile = open('track.pkl', 'wb')
     pickle.dump(track, outfile)
