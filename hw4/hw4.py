@@ -34,7 +34,8 @@ if __name__ == '__main__':
         Im[i, :, :, :] = im
 
     # Build feature track
-    track = BuildFeatureTrack(Im, K)
+    # track = BuildFeatureTrack(Im, K)
+    track = np.load('track.pkl', allow_pickle=True)
 
     track1 = track[0, :, :]
     track2 = track[1, :, :]

@@ -71,6 +71,8 @@ def EstimateE(x1, x2):
     # TODO Your code goes here
     assert x1.shape == x2.shape, f"Shapes do not match {x1.shape} != {x2.shape}"
     X = np.zeros((8, 9))
+    # print('x1 shape: ', x1.shape, '\tx2 shape: ', x2.shape)
+    # print(x1)
     for i in range(8):
         X[i] = [x1[i, 0] * x2[i, 0], x1[i, 0] * x2[i, 1], x1[i, 0] * x2[i, 2],
                 x1[i, 1] * x2[i, 0], x1[i, 1] * x2[i, 1], x1[i, 1] * x2[i, 2],
@@ -121,10 +123,7 @@ def EstimateE_RANSAC(x1, x2, ransac_n_iter, ransac_thr):
         The inlier indices
     """
 
-    # TODO Your code goes here
-
     ransac_n_iter = 500
-    # kk = 0
 
     highest_number_of_happy_points = -1
     best_estimated_essential_matrix = np.identity(3)
@@ -135,6 +134,7 @@ def EstimateE_RANSAC(x1, x2, ransac_n_iter, ransac_thr):
         x1_s = x1[s1]
         x2_s = x2[s1]
 
+        # print(x1_s[0])
         E = EstimateE(x1_s, x2_s)
 
         ''' get the eMat with the lowest error
@@ -181,8 +181,8 @@ def BuildFeatureTrack(Im, K):
     # TODO Your code goes here
 
     loc, des = [], []
-    n_features = []
-    
+    n_features = 0
+
     for i in range(len(Im[:, :, :, :])):
         # TODO Your code goes here
         img = Im[i, :, :, :]
@@ -193,17 +193,17 @@ def BuildFeatureTrack(Im, K):
         kp_temp, des_temp = sift.detectAndCompute(gray, None)
 
         # print(des_temp.shape[0])
-        n_features.append(des_temp.shape[0])
+        n_features += des_temp.shape[0]
         des_temp = des_temp.tolist()
 
         kp_temp = [list(kp_temp[idx].pt) for idx in range(0, len(kp_temp))]
 
         loc.append(kp_temp)
         des.append(des_temp)
-        
+
     # Numpy Initialization for Feature Track
-    track_i = np.ones((len(Im[:, :, :, :]), sum(n_features), 2)) * -1
-    prev_n_features = 0
+    track_i = np.ones((len(Im[:, :, :, :]), n_features, 2)) * -1
+
     K_inv = np.linalg.inv(K)
     for i in range(len(Im[:, :, :, :])):
         for j in range(i + 1, len(Im[:, :, :, :])):
@@ -240,11 +240,9 @@ def BuildFeatureTrack(Im, K):
 
             # Update Track with only inliers of RANSAC
             for inlier_index in inlier:
-                track_i[i,prev_n_features+ ind[inlier_index], :] = x1[inlier_index]
-                track_i[j,prev_n_features+ ind[inlier_index], :] = x2[inlier_index]
-            
-            
-        prev_n_features = prev_n_features + n_features[i]
+                track_i[i, ind[inlier_index], :] = x1[inlier_index]
+                track_i[j, ind[inlier_index], :] = x2[inlier_index]
+
     track = track_i
     outfile = open('track.pkl', 'wb')
     pickle.dump(track, outfile)
