@@ -73,19 +73,22 @@ def Triangulation(P1, P2, track1, track2):
     if track2.shape[1] != n:
         raise ValueError("Number of points don't match.")
 
+    X = np.zeros((n, 3))
     for i in range(n):
-        M = np.zeros((6, 6))
-        M[:3, :4] = P1
-        M[3:, :4] = P2
-        M[:3, 4] = -track1[:, i]
-        M[3:, 5] = -track2[:, i]
-
-        U, S, V = np.linalg.svd(M)
-        X = V[-1, :4]
-        X = X / X[3]
-        X = np.array(X).T
-
+        u = np.array([track1[i, 0], track1[i, 1], 1])
+        v = np.array([track2[i, 0], track2[i, 1], 1])
+        A = np.vstack([vec2skew(u) @ P1, vec2skew(v) @ P2])
+        U, D, Vh = np.linalg.svd(A)
+        p = Vh[-1]
+        X[i] = p[:3] / p[3]
     return X
+
+
+def vec2skew(v):
+    skew = np.array([[    0, -v[2],  v[1]],
+                     [ v[2],     0, -v[0]],
+                     [-v[1],  v[0],    0]])
+    return skew
 
 
 def EvaluateCheirality(P1, P2, X):
@@ -171,8 +174,6 @@ def EstimateCameraPose(track1, track2):
 
     R, C = GetCameraPoseFromE(E)
 
-    # print(C)
-
     P1 = np.array([[1, 0, 0, 0],
                    [0, 1, 0, 0],
                    [0, 0, 1, 0]])
@@ -180,7 +181,7 @@ def EstimateCameraPose(track1, track2):
     for i in range(4):
         print('R ', R[i])
         print('C ', C[i])
-        print('The other ', (np.dot(-(R[i], C[i]))))
+        print('The other ', (-(R[i] @ C[i])))
         # A possible transformations
         P2 = np.hstack([R[i], -(R[i] @ C[i]).reshape((3, 1))])
         X = Triangulation(P1, P2, x1, x2)
