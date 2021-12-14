@@ -5,6 +5,7 @@ from utils import Rotation2Quaternion
 from utils import Quaternion2Rotation
 
 
+
 def PnP(X, x):
     """
     Implement the linear perspective-n-point algorithm
