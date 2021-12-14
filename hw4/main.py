@@ -6,7 +6,7 @@ import numpy as np
 import open3d as o3d
 from scipy.interpolate import RectBivariateSpline
 
-from feature import BuildFeatureTrack
+from feature_detection import BuildFeatureTrack
 from camera_pose import EstimateCameraPose
 from camera_pose import Triangulation
 from camera_pose import EvaluateCheirality
@@ -23,28 +23,29 @@ if __name__ == '__main__':
     parser.add_argument('--img_dir', type=str, default='im')
     args = parser.parse_args()
 
-    K = np.asarray([
-        [350, 0, 480],
-        [0, 350, 270],
+    intrinsic_parameters = np.asarray([
+        [3228.13099, 0, 1567.2076],
+        [0, 3238.72283, 1821.86286],
         [0, 0, 1]
     ])
-    
-    # Load input images
-    img_list = os.listdir(args.img_dir)
-    img_list.sort()
-    num_images = len(img_list)
-    im_shape = cv2.imread(os.path.join(args.img_dir, img_list[0])).shape
-    h_im = im_shape[0]
-    w_im = im_shape[1]
 
-    Im = np.empty((num_images, h_im, w_im, 3), dtype=np.uint8)
-    for i in range(num_images):
-        im = cv2.imread(os.path.join(args.img_dir, img_list[i]))
+    # Load input images
+    List_Img = os.listdir(args.img_dir)
+    List_Img.sort()
+    Num_Images = len(List_Img)
+    img_shape = cv2.imread(os.path.join(args.img_dir, List_Img[0])).shape
+    height = img_shape[0]
+    width = img_shape[1]
+
+    Images = np.empty((Num_Images, height, width, 3), dtype=np.uint8)
+    for i in range(Num_Images):
+        im = cv2.imread(os.path.join(args.img_dir, List_Img[i]))
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        Im[i,:,:,:] = im
+        Images[i,:,:,:] = im
 
     # Build feature track
-    track = BuildFeatureTrack(Im, K)
+    track = BuildFeatureTrack(Images, intrinsic_parameters)
+    #track = np.load('track.pkl', allow_pickle=True)
 
     track1 = track[0,:,:]
     track2 = track[1,:,:]
@@ -57,7 +58,7 @@ if __name__ == '__main__':
         os.makedirs(output_dir)
 
     # Set of camera poses
-    P = np.zeros((num_images, 3, 4))
+    P = np.zeros((Num_Images, 3, 4))
     # Set first two camera poses
     P[0] = np.array([[1, 0, 0, 0],
                      [0, 1, 0, 0],
@@ -65,8 +66,8 @@ if __name__ == '__main__':
     P[1] = np.hstack([R, -(R@C).reshape((3,1))])
 
     ransac_n_iter = 1000
-    ransac_thr = 0.005
-    for i in range(2, num_images):
+    ransac_thr = 0.5
+    for i in range(2, Num_Images):
         # Estimate new camera pose
         X_mask = np.logical_and( np.logical_and(X[:,0]!=-1, X[:,1]!=-1), X[:,2]!=-1)
 
@@ -135,9 +136,9 @@ if __name__ == '__main__':
             x = X_new_h @ P[j,:,:].T
             x = x / x[:, 2, np.newaxis]
             mask_valid = (x[:,0] >= -1) * (x[:,0] <= 1) * (x[:,1] >= -1) * (x[:,1] <= 1)
-            uv = x[mask_valid,:] @ K.T
+            uv = x[mask_valid,:] @ intrinsic_parameters.T
             for k in range(3):
-                interp_fun = RectBivariateSpline(np.arange(h_im), np.arange(w_im), Im[j,:,:,k].astype(float)/255, kx=1, ky=1)
+                interp_fun = RectBivariateSpline(np.arange(height), np.arange(width), Images[j,:,:,k].astype(float)/255, kx=1, ky=1)
                 colors[mask_valid, k] = interp_fun(uv[:,1], uv[:,0], grid=False)
 
         ind = np.sqrt(np.sum(X_ba ** 2, axis=1)) < 200

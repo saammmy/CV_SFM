@@ -1,6 +1,6 @@
 import numpy as np
 
-from feature import EstimateE_RANSAC
+from feature_detection import EstimateE_RANSAC
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 from mpl_toolkits.mplot3d import axes3d

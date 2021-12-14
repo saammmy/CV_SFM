@@ -5,7 +5,7 @@ import numpy as np
 import open3d as o3d
 from scipy.interpolate import RectBivariateSpline
 
-from feature import BuildFeatureTrack
+from feature_detection import BuildFeatureTrack
 from camera_pose import EstimateCameraPose
 from camera_pose import Triangulation
 from camera_pose import EvaluateCheirality
