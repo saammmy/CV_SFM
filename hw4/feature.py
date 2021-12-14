@@ -1,16 +1,11 @@
 import cv2
 import numpy as np
-from sklearn.neighbors import NearestNeighbors
-from skimage.measure import ransac
-from skimage.transform import FundamentalMatrixTransform
-# import torch
-import pickle, pandas as pd
-
+from scipy.spatial import cKDTree
 
 def MatchSIFT(loc1, des1, loc2, des2):
     """
     Find the matches of SIFT features between two images
-
+    
     Parameters
     ----------
     loc1 : ndarray of shape (n1, 2)
@@ -32,29 +27,38 @@ def MatchSIFT(loc1, des1, loc2, des2):
         The indices of x1 in loc1
     """
 
-    # TODO Your code goes here
-    NNDR = 0.8
-    nbrs = NearestNeighbors(n_neighbors=2).fit(des2)
-    distances, indices = nbrs.kneighbors(des1, 2, return_distance=True)
-
-    # print(len(distances))
-    # print(indices, distances)
-    pairlist = []
-
     x1, x2, ind1 = [], [], []
-    for i, distance in enumerate(distances):
-        if distance[0] < NNDR * distance[1]:
-            x1.append(loc1[i])
-            x2.append(loc2[indices[i][0]])
-            ind1.append(i)
+    ratio = 0.7
+    tree1, tree2 = cKDTree(des1), cKDTree(des2)
 
-    # print(x2)
+    N = loc1.shape[0]
 
+    for i in range(N):
+        ft_1 = des1[i]
+        dd, ii = tree2.query([ft_1], k=2, n_jobs=-1)
+        if dd[0,0] / dd[0,1] < ratio:
+            # the correspoinding index of matched feature in des2 from des1
+            idx2 = ii[0, 0]
+            
+            # query back from feature 2 to tree1
+            ft_2 = des2[idx2]
+            dd, ii = tree1.query([ft_2], k=2, n_jobs=-1)
+            if dd[0,0] / dd[0,1] < ratio:
+                if ii[0, 0] == i:
+                    x1.append(loc1[i])
+                    x2.append(loc2[idx2])
+                    ind1.append(i)
+    x1 = np.stack(x1)
+    x2 = np.stack(x2)
+    ind1 = np.array(ind1)
     return x1, x2, ind1
 
 
 def EstimateE(x1, x2):
     """
+    Estimate the essential matrix, which is a rank 2 matrix with singular values
+    (1, 1, 0)
+
     Parameters
     ----------
     x1 : ndarray of shape (n, 2)
@@ -68,35 +72,23 @@ def EstimateE(x1, x2):
         The essential matrix
     """
 
-    # TODO Your code goes here
-    assert x1.shape == x2.shape, f"Shapes do not match {x1.shape} != {x2.shape}"
-    X = np.zeros((8, 9))
-    # print('x1 shape: ', x1.shape, '\tx2 shape: ', x2.shape)
-    # print(x1)
-    for i in range(8):
-        X[i] = [x1[i, 0] * x2[i, 0], x1[i, 0] * x2[i, 1], x1[i, 0] * x2[i, 2],
-                x1[i, 1] * x2[i, 0], x1[i, 1] * x2[i, 1], x1[i, 1] * x2[i, 2],
-                x1[i, 2] * x2[i, 0], x1[i, 2] * x2[i, 1], x1[i, 2] * x2[i, 2]]
+    n = x1.shape[0]
 
-    X = np.matmul(X.transpose(), X)
+    A=[];
+    for i in range(n):
+        ux, uy, vx, vy = x1[i, 0], x1[i, 1], x2[i, 0], x2[i, 1]
+        A.append([ux*vx, uy*vx, vx, ux*vy, uy* vy, vy, ux, uy, 1])
+        
+    A = np.stack(A)
 
-    eigenValues, eigenVectors = np.linalg.eig(X)
-    idx = eigenValues.argsort()[::-1]
+    _, _, V = np.linalg.svd(A)
+    E = V[-1].reshape(3,3)
 
-    eigenValues = eigenValues[idx]
-    eigenVectors = eigenVectors[:, idx]
-    # print(eigenVectors[8])
-    # solution of X*E = 0 is F:
-    F = eigenVectors[8].reshape(3, 3)
-    # print(F)
-    U, sigma, V = np.linalg.svd(F)
-    S = np.zeros((3, 3))
-    S[0, 0] = S[1, 1] = (sigma[0] + sigma[1]) / 2
-    E = np.matmul((np.matmul(U, S)), V.transpose())
+    U, _, Vh = np.linalg.svd(E)
+    D = np.eye(3)
+    D[2,2] = 0
+    E = U @ D @ Vh
 
-    # lines1 = cv2.computeCorrespondEpilines(x2, F)
-    # lines1 = lines1.reshape(-1, 3)
-    # print(lines1)
     return E
 
 
@@ -122,43 +114,43 @@ def EstimateE_RANSAC(x1, x2, ransac_n_iter, ransac_thr):
     inlier : ndarray of shape (k,)
         The inlier indices
     """
+    n = x1.shape[0]
+    max_inlier = 0
+    inlier = None
+    E = np.eye(3)
 
-    ransac_n_iter = 500
+    # homogeneous coordinates
+    homo_x1 = np.insert(x1, 2, 1, axis=1)
+    homo_x2 = np.insert(x2, 2, 1, axis=1)
 
-    highest_number_of_happy_points = -1
-    best_estimated_essential_matrix = np.identity(3)
+    for n_step in range(ransac_n_iter):
+        sample_idx = np.random.choice(n, 8) 
+        sampled_x1 = x1[sample_idx]
+        sampled_x2 = x2[sample_idx]
 
-    for r in range(ransac_n_iter):
-        s1 = np.random.randint(x1.shape[0], size=8)
-        s2 = np.random.randint(x2.shape[0], size=8)
-        x1_s = x1[s1]
-        x2_s = x2[s1]
+        estimated_E = EstimateE(sampled_x1, sampled_x2)
 
-        # print(x1_s[0])
-        E = EstimateE(x1_s, x2_s)
+        error = np.abs(np.diag(homo_x1 @ estimated_E.T @ homo_x2.T))
 
-        ''' get the eMat with the lowest error
-        X'EX = 0 or in our case the error
-        *[x2, y2, 1] * E * [x1, y1, 1] = 0 Found here
-        Found here https://www.cc.gatech.edu/~hays/compvision/proj3/
-        '''
-        # sample_evaluation = []
-        inlier_idx = []
-        for i in range(len(x1)):
-            E_dot_x2 = np.matmul(E, x2[i])
-            dst = np.sum(x1[i] * E_dot_x2, axis=0)
+        num_inlier = np.sum(error < ransac_thr)
 
-            error = dst / (np.linalg.norm(x1[i]) * np.linalg.norm(E_dot_x2))
-            if np.abs(error) < ransac_thr:
-                inlier_idx.append(i)
+        if num_inlier > max_inlier:
+            max_inlier = num_inlier
+            E = estimated_E
+            inlier = np.array(np.nonzero(error < ransac_thr)).reshape(-1)
 
-            if len(inlier_idx) > highest_number_of_happy_points:
-                highest_number_of_happy_points = len(inlier_idx)
-                best_estimated_essential_matrix = E
-                inlier = np.array(inlier_idx)
-
-    E = best_estimated_essential_matrix
     return E, inlier
+
+
+def cvt_keypoint(kp):
+    '''
+    convert keypoint result to numpy array
+    '''
+    N = len(kp)
+    locations = np.zeros((N,2))
+    for i in range(N):
+        locations[i, :] = np.array(kp[i].pt)
+    return locations
 
 
 def BuildFeatureTrack(Im, K):
@@ -177,74 +169,62 @@ def BuildFeatureTrack(Im, K):
     track : ndarray of shape (N, F, 2)
         The feature tensor, where F is the number of total features
     """
+    N = Im.shape[0]
+    
+    loc_list, des_list, num_index = [], [], [0]
+    sift = cv2.xfeatures2d.SIFT_create()
+    
+    print('Extract SIFT features...')
+    for i in range(N):
 
-    # TODO Your code goes here
+        # compute keypoint and descriptors
+        kp, des = sift.detectAndCompute(Im[i], None)
+        # convert keypoint to numpy array
+        loc = cvt_keypoint(kp)
 
-    loc, des = [], []
-    n_features = 0
+        loc_list.append(loc)
+        des_list.append(des)
+        num_index.append(num_index[-1] + loc.shape[0])
 
-    for i in range(len(Im[:, :, :, :])):
-        # TODO Your code goes here
-        img = Im[i, :, :, :]
-        # Extract SIFT features
-        # TODO Your code goes here
-        sift = cv2.SIFT_create()
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        kp_temp, des_temp = sift.detectAndCompute(gray, None)
+        print('image %d, found %d features'%(i, loc.shape[0]))
 
-        # print(des_temp.shape[0])
-        n_features += des_temp.shape[0]
-        des_temp = des_temp.tolist()
+    track = np.empty((N, 0, 2))
+    for i in range(N - 1):
+        print('Build track %d....'%(i))
 
-        kp_temp = [list(kp_temp[idx].pt) for idx in range(0, len(kp_temp))]
+        nft = loc_list[i].shape[0]
+        track_i = -1 * np.ones((N, nft, 2))
 
-        loc.append(kp_temp)
-        des.append(des_temp)
+        loc1 = loc_list[i]
+        des1 = des_list[i]
 
-    # Numpy Initialization for Feature Track
-    track_i = np.ones((len(Im[:, :, :, :]), n_features, 2)) * -1
+        for j in range(i+1, N):
+            
+            loc2 = loc_list[j]
+            des2 = des_list[j]
 
-    K_inv = np.linalg.inv(K)
-    for i in range(len(Im[:, :, :, :])):
-        for j in range(i + 1, len(Im[:, :, :, :])):
-            # Find the matches between two images (x1 <--> x2)
-            x1, x2, ind = MatchSIFT(loc[i], des[i], loc[j], des[j])
+            x1, x2, ind1 = MatchSIFT(loc1, des1, loc2, des2)
+            print('Found %d matched pairs between image %d and %d'%(x1.shape[0], i, j))
 
-            # Homogenize coordinates to [x1 y1 1]
-            X1 = []
-            idx = 0
-            while idx < len(x1):
-                X1.append([x1[idx][0], x1[idx][1], 1])
-                idx += 1
+            # normalize coordinate by inv(K)
+            norm_coord_1 = np.insert(x1, 2, 1, axis=1) @ np.linalg.inv(K).T
+            norm_coord_2 = np.insert(x2, 2, 1, axis=1) @ np.linalg.inv(K).T
 
-            # Homogenize coordinates to [x2 y2 1]
-            X2 = []
-            idx = 0
-            while idx < len(x2):
-                X2.append([x2[idx][0], x2[idx][1], 1])
-                idx += 1
+            norm_coord_1 = norm_coord_1[:, :2]
+            norm_coord_2 = norm_coord_2[:, :2]
 
-            # Normalize coordinate by multiplying the inverse of intrinsics
-            x1 = [np.dot(K_inv, X1[idx]) for idx in range(len(X1))]
-            x2 = [np.dot(K_inv, X2[idx]) for idx in range(len(X2))]
+            E, inlier = EstimateE_RANSAC(norm_coord_1, norm_coord_2, 500, 0.003)
+            print('%d matched pairs remains after essential matrix estimation'%(inlier.shape[0]))
 
-            x1 = np.array(x1)
-            x2 = np.array(x2)
-            # print(x1.shape)
+            track_index = ind1[inlier]
 
-            E, inlier = EstimateE_RANSAC(x1, x2, ransac_n_iter=500, ransac_thr=0.5)
+            track_i[i, track_index, :] = norm_coord_1[inlier]
+            track_i[j, track_index, :] = norm_coord_2[inlier]
 
-            # Removing Homogenization
-            x1 = x1[:, :-1]
-            x2 = x2[:, :-1]
+        # filter features in ith image with no matches
+        mask = np.sum(track_i[i], axis=1) != -2
+        track_i = track_i[:, mask, :]
+        print('Adding %d feature matches from image %d into track'%(track_i.shape[1], i))
+        track = np.concatenate([track, track_i], axis=1)
 
-            # Update Track with only inliers of RANSAC
-            for inlier_index in inlier:
-                track_i[i, ind[inlier_index], :] = x1[inlier_index]
-                track_i[j, ind[inlier_index], :] = x2[inlier_index]
-
-    track = track_i
-    outfile = open('track.pkl', 'wb')
-    pickle.dump(track, outfile)
-    outfile.close()
     return track
