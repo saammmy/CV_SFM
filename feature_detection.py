@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 from scipy.spatial import cKDTree
 
+
 def MatchSIFT(location1, descriptor1, location2, descriptor2):
     """
     Find the matches of SIFT features between two images
@@ -33,20 +34,16 @@ def MatchSIFT(location1, descriptor1, location2, descriptor2):
     tree1, tree2 = cKDTree(descriptor1), cKDTree(descriptor2)
 
     N = location1.shape[0]
-    
-
 
     for i in range(N):
         ft_1 = descriptor1[i]
         dd, ii = tree2.query([ft_1], k=2, n_jobs=-1)
-        if dd[0,0] / dd[0,1] < ratio:
-            # the correspoinding index of matched feature in descriptor2 from descriptor1
+        if dd[0, 0] / dd[0, 1] < ratio:
             idx2 = ii[0, 0]
-            
-            # query back from feature 2 to tree1
+
             ft_2 = descriptor2[idx2]
             dd, ii = tree1.query([ft_2], k=2, n_jobs=-1)
-            if dd[0,0] / dd[0,1] < ratio:
+            if dd[0, 0] / dd[0, 1] < ratio:
                 if ii[0, 0] == i:
                     x1.append(location1[i])
                     x2.append(location2[idx2])
@@ -77,19 +74,19 @@ def EstimateE(x1, x2):
 
     n = x1.shape[0]
 
-    A=[]
+    A = []
     for i in range(n):
         ux, uy, vx, vy = x1[i, 0], x1[i, 1], x2[i, 0], x2[i, 1]
-        A.append([ux*vx, uy*vx, vx, ux*vy, uy* vy, vy, ux, uy, 1])
-        
+        A.append([ux * vx, uy * vx, vx, ux * vy, uy * vy, vy, ux, uy, 1])
+
     A = np.stack(A)
 
     _, _, V = np.linalg.svd(A)
-    E = V[-1].reshape(3,3)
+    E = V[-1].reshape(3, 3)
 
     U, _, Vh = np.linalg.svd(E)
     D = np.eye(3)
-    D[2,2] = 0
+    D[2, 2] = 0
     E = U @ D @ Vh
 
     return E
@@ -122,12 +119,11 @@ def EstimateE_RANSAC(x1, x2, ransac_n_iter, ransac_thr):
     inlier_index = None
     E = np.eye(3)
 
-    # homogeneous coordinates
     homogeneous1 = np.insert(x1, 2, 1, axis=1)
     homogeneous2 = np.insert(x2, 2, 1, axis=1)
 
     for n_step in range(ransac_n_iter):
-        sample_idx = np.random.choice(n, 8) 
+        sample_idx = np.random.choice(n, 8)
         sampled_x1 = x1[sample_idx]
         sampled_x2 = x2[sample_idx]
 
@@ -146,11 +142,11 @@ def EstimateE_RANSAC(x1, x2, ransac_n_iter, ransac_thr):
 
 
 def cvt_keypoint(kp):
-    '''
+    """
     convert keypoint result to numpy array
-    '''
+    """
     N = len(kp)
-    locations = np.zeros((N,2))
+    locations = np.zeros((N, 2))
     for i in range(N):
         locations[i, :] = np.array(kp[i].pt)
     return locations
@@ -173,43 +169,38 @@ def BuildFeatureTrack(Im, K):
         The feature tensor, where F is the number of total features
     """
     N = Im.shape[0]
-    
+
     location, descriptor, num_index = [], [], [0]
-    sift = cv2.xfeatures2d.SIFT_create()
-    
+    sift = cv2.SIFT_create()
+
     print('Extract SIFT features...')
     for i in range(N):
-
-        # compute keypoint and descriptors
         kp, des = sift.detectAndCompute(Im[i], None)
-        # convert keypoint to numpy array
         loc = cvt_keypoint(kp)
 
         location.append(loc)
         descriptor.append(des)
         num_index.append(num_index[-1] + loc.shape[0])
 
-        print('image %d, found %d features'%(i, loc.shape[0]))
+        print('image %d, found %d features' % (i, loc.shape[0]))
 
     track_full = np.empty((N, 0, 2))
     for i in range(N - 1):
-        print('Build track %d....'%(i))
- 
+        print('Build track %d....' % (i))
+
         nft = location[i].shape[0]
         track_i = -1 * np.ones((N, nft, 2))
 
         location1 = location[i]
         descriptor1 = descriptor[i]
 
-        for j in range(i+1, N):
-            
+        for j in range(i + 1, N):
             location2 = location[j]
             descriptor2 = descriptor[j]
 
             x1, x2, index1 = MatchSIFT(location1, descriptor1, location2, descriptor2)
-            print('Found %d matched pairs between image %d and %d'%(x1.shape[0], i, j))
+            print('Found %d matched pairs between image %d and %d' % (x1.shape[0], i, j))
 
-            # normalize coordinate by inv(K)
             normalized1 = np.insert(x1, 2, 1, axis=1) @ np.linalg.inv(K).T
             normalized2 = np.insert(x2, 2, 1, axis=1) @ np.linalg.inv(K).T
 
@@ -217,20 +208,19 @@ def BuildFeatureTrack(Im, K):
             normalized2 = normalized2[:, :2]
 
             E, inlier_index = EstimateE_RANSAC(normalized1, normalized2, 500, 0.003)
-            print('%d matched pairs remains after essential matrix estimation'%(inlier_index.shape[0]))
+            print('%d matched pairs remains after essential matrix estimation' % (inlier_index.shape[0]))
 
             track_index = index1[inlier_index]
 
             track_i[i, track_index, :] = normalized1[inlier_index]
             track_i[j, track_index, :] = normalized2[inlier_index]
 
-        # filter features in ith image with no matches
         mask = np.sum(track_i[i], axis=1) != -2
         track_i = track_i[:, mask, :]
-        print('Adding %d feature matches from image %d into track'%(track_i.shape[1], i))
+        print('Adding %d feature matches from image %d into track' % (track_i.shape[1], i))
         track_full = np.concatenate([track_full, track_i], axis=1)
 
     outfile = open('track.pkl', 'wb')
     pickle.dump(track_full, outfile)
-    outfile.close
+    outfile.close()
     return track_full

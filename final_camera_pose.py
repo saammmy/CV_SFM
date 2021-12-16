@@ -1,5 +1,5 @@
 import numpy as np
-
+import sys
 from feature_detection import EstimateE_RANSAC
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
@@ -10,6 +10,7 @@ References:
     https://www.cs.cmu.edu/~16385/s17/Slides/11.4_Triangulation.pdf
     https://filebox.ece.vt.edu/~jbhuang/teaching/ece5554-4554/fa17/lectures/Lecture_15_StructureFromMotion.pdf
 """
+
 
 def GetCameraPoseFromE(E):
     """
@@ -29,18 +30,18 @@ def GetCameraPoseFromE(E):
     """
 
     W = np.array([[0, -1, 0],
-                  [1,  0, 0],
-                  [0,  0, 1]])
-    U,D,Vt = np.linalg.svd(E)
-    
+                  [1, 0, 0],
+                  [0, 0, 1]])
+    U, D, Vt = np.linalg.svd(E)
+
     R1 = U @ W @ Vt
-    C1 = U[:,2]
+    C1 = U[:, 2]
     if np.linalg.det(R1) < 0:
         R1 = -R1
         C1 = -C1
 
     R2 = U @ W @ Vt
-    C2 = -U[:,2]
+    C2 = -U[:, 2]
     if np.linalg.det(R2) < 0:
         R2 = -R2
         C2 = -C2
@@ -61,8 +62,10 @@ def GetCameraPoseFromE(E):
     C_set = np.stack([C1, C2, C3, C4])
     return R_set, C_set
 
-def vec2skew(v):
-    return np.array([[0, -v[2],  v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+
+def vec2skew(a):
+    return np.array([[0, -a[2], a[1]], [a[2], 0, -a[0]], [-a[1], a[0], 0]])
+
 
 def Triangulation(P1, P2, track1, track2):
     """
@@ -100,7 +103,6 @@ def Triangulation(P1, P2, track1, track2):
     points_3d = np.zeros((n, 3))
 
     for i in range(n):
-
         u = np.array([track1[i, 0], track1[i, 1], 1])
         v = np.array([track2[i, 0], track2[i, 1], 1])
 
@@ -108,9 +110,9 @@ def Triangulation(P1, P2, track1, track2):
         h2 = (vec2skew(v) @ P2)[(0, 1), :]
         h3 = np.vstack((h1, h2))
         U, D, Vt = np.linalg.svd(h3)
-        #print(Vt)
+        # print(Vt)
         a = Vt[-1]
-        # Homogenise
+        # Homogenize
         points_3d[i] = a[:3] / a[3]
     return points_3d
 
@@ -134,19 +136,18 @@ def EvaluateCheirality(P1, P2, X):
         The binary vector indicating the cheirality condition, i.e., the entry 
         is 1 if the point is in front of both cameras, and 0 otherwise
     """
-    
+
     R1, R2 = P1[:, :3], P2[:, :3]
-    t1, t2 = P1[:, 3],  P2[:, 3]
+    t1, t2 = P1[:, 3], P2[:, 3]
+    # Get back to original position
     C1, C2 = -R1.T @ t1, -R2.T @ t2
     r3_1, r3_2 = R1[2, :], R2[2, :]
 
-    mask1 = ((X - C1) @ r3_1) > 0
-    mask2 = ((X - C2) @ r3_2) > 0
+    cond1 = ((X - C1) @ r3_1) > 0
+    cond2 = ((X - C2) @ r3_2) > 0
 
-    valid_index = np.logical_and(mask1, mask2).reshape(-1)
-
+    valid_index = np.logical_and(cond1, cond2).reshape(-1)
     return valid_index
-
 
 
 def EstimateCameraPose(track1, track2):
@@ -169,36 +170,32 @@ def EstimateCameraPose(track1, track2):
     X : ndarray of shape (F, 3)
         The set of reconstructed 3D points
     """
-    F = track1.shape[0]
+    N = track1.shape[0]
 
-    # # find pairs for im1 and im2
+    # Find correspondences for pair im1 and im2
     mask = np.logical_and(np.sum(track1, axis=1) != -2, np.sum(track2, axis=1) != -2)
     x1, x2 = track1[mask], track2[mask]
-    ft_index = np.asarray(np.nonzero(mask)[0])
+    featureIdx = np.asarray(np.nonzero(mask)[0])
 
     E, inlier = EstimateE_RANSAC(x1, x2, 500, 0.003)
-    # inlier_index = ft_index[inlier]     # inlier index in all features (.., F, .. )
 
     R_set, C_set = GetCameraPoseFromE(E)
 
-    num_valid = 0
-    validX_set = []
+    numValid = 0
+    valid3DCoord = []
     P1 = np.array([[1, 0, 0, 0],
                    [0, 1, 0, 0],
                    [0, 0, 1, 0]])
     for i in range(4):
-        P2 = np.hstack([R_set[i], -(R_set[i] @ C_set[i]).reshape((3,1))])
-        X_temp = Triangulation(P1, P2, x1, x2)
-        Index_Cheirality= EvaluateCheirality(P1, P2, X_temp)
-        validX_set.append(X_temp[Index_Cheirality])
-        # print('Found %d valid points after triangulation'%(np.sum(Index_Cheirality)))
+        P2 = np.hstack([R_set[i], -(R_set[i] @ C_set[i]).reshape((3, 1))])
+        X_curr = Triangulation(P1, P2, x1, x2)
+        Index_Cheirality = EvaluateCheirality(P1, P2, X_curr)
+        valid3DCoord.append(X_curr[Index_Cheirality])
 
-        if np.sum(Index_Cheirality) > num_valid:
-            num_valid = np.sum(Index_Cheirality)
+        if np.sum(Index_Cheirality) > numValid:
+            numValid = np.sum(Index_Cheirality)
             R = R_set[i]
             C = C_set[i]
-            X = -1 * np.ones((F,3))
-            X[ft_index[Index_Cheirality]] = X_temp[Index_Cheirality]
-
+            X = -1 * np.ones((N, 3))
+            X[featureIdx[Index_Cheirality]] = X_curr[Index_Cheirality]
     return R, C, X
-    

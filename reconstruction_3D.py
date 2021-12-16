@@ -1,9 +1,9 @@
 import numpy as np
+import sys
 from scipy.optimize import least_squares
-
 from perspective_point_algorithm import ComputePoseJacobian
-from utils import Rotation2Quaternion
 from utils import Quaternion2Rotation
+from utils import Rotation2Quaternion
 
 
 def FindMissingReconstruction(X, track_i):
@@ -19,44 +19,45 @@ def FindMissingReconstruction(X, track_i):
 
     Returns
     -------
-    new_point : ndarray of shape (F,)
+    addedPoint : ndarray of shape (F,)
         The indicator of new points that are valid for the new image and are 
         not reconstructed yet
     """
-    
-    mask = np.logical_and( np.logical_and(X[:,0]!=0, X[:,1]!=0), X[:,2]!=0)
 
-    mask_track = np.logical_and(track_i[:,0]!= -1, track_i[:,1]!= -1)
-    mask = np.logical_and(mask, mask_track)
+    cnd1 = np.logical_and(np.logical_and(X[:, 0] != 0, X[:, 1] != 0), X[:, 2] != 0)
 
-    F = X.shape[0]
-    new_point = np.zeros(F)
-    new_point[mask] = 1
+    cnd2 = np.logical_and(track_i[:, 0] != -1, track_i[:, 1] != -1)
+    cnd3 = np.logical_and(cnd1, cnd2)
 
-    return new_point
+    N = X.shape[0]
+    addedPoint = np.zeros(N)
+    addedPoint[cnd3] = 1
+
+    return addedPoint
+
 
 def ComputeTriangulationError(X, P1, P2, b):
-    '''
+    """
     Compute averaged nonlinear triangulation error E  and vector f for each point in X
-    '''
-    homegeneous_X = np.insert(X, 3, 1, axis=1)
-    x1 = homegeneous_X @ P1.T
-    x1 = x1[:, :2] / x1[:,-1:]
-    x2 = homegeneous_X @ P2.T
-    x2 = x2[:, :2] / x2[:,-1:]
+    """
+    homo_X = np.insert(X, 3, 1, axis=1)
+    x1 = homo_X @ P1.T
+    x1 = x1[:, :2] / x1[:, -1:]
+    x2 = homo_X @ P2.T
+    x2 = x2[:, :2] / x2[:, -1:]
 
-    err1 = np.average(np.linalg.norm(x1 - b[:, :2], axis=1))
-    err2 = np.average(np.linalg.norm(x2 - b[:, 2:], axis=1))
-    error = (err1 + err2) / 2
+    error1 = np.linalg.norm(x1 - b[:, :2], axis=1)
+    error2 = np.linalg.norm(x2 - b[:, 2:], axis=1)
+    error = (np.average(error1) + np.average(error2)) / 2
 
-    f = np.hstack([x1, x2])      # n x 4
+    f = np.hstack([x1, x2])
     return error, f
 
 
 def CompressP(P):
-    '''
+    """
     compress (3, 4) projection matrix to (7), C + quaternion
-    '''
+    """
     R = P[:, :3]
     q = Rotation2Quaternion(R)
     t = P[:, 3]
@@ -87,42 +88,36 @@ def Triangulation_nl(X, P1, P2, x1, x2):
     X_new : ndarray of shape (n, 3)
         The set of refined 3D points
     """
-    
-    # maximum number of iterations
-    max_iter = 50
-    # threshold for terminating gradient update
+
+    maxIter = 50
     eps = 5e-5
     lmbd = 1e-2
     n = x1.shape[0]
-    b = np.hstack([x1, x2])  # n x 4
-    
+    b = np.hstack([x1, x2])
+
     p1, p2 = CompressP(P1), CompressP(P2)
-    
-    previous_error, f = ComputeTriangulationError(X, P1, P2, b)
 
-    for i_iter in range(max_iter):
-        print('Running nonlinear triangulation iteration %d'%(i_iter))
-        
+    previousError, f = ComputeTriangulationError(X, P1, P2, b)
+
+    for iter in range(maxIter):
+        print('Iteration %d of non-linear triangulation' % (iter))
+
         for i in range(n):
-            # compute jacobian matrix for each point and stack them
-            dfdX = []
-            dfdX.append(ComputePointJacobian(X[i], p1))
-            dfdX.append(ComputePointJacobian(X[i], p2))
-            dfdX = np.vstack(dfdX)     
-            assert dfdX.shape[0] == 4 and dfdX.shape[1] == 3
+            J_X = [ComputePointJacobian(X[i], p1), ComputePointJacobian(X[i], p2)]
+            J_X = np.vstack(J_X)
+            if J_X.shape[0] != 4 or J_X.shape[1] != 3:
+                sys.exit("Incorrect Jacobian.")
 
-            # compute dX and update position
-            #                 | 3x4 |   |4x3|                     | 3x4 |   |  4  |
-            dX = np.linalg.inv(dfdX.T @ dfdX + lmbd * np.eye(3)) @ dfdX.T @ (b[i] - f[i])
-            X[i] += dX 
+            dX = np.linalg.inv(J_X.T @ J_X + lmbd * np.eye(3)) @ J_X.T @ (b[i] - f[i])
+            X[i] += dX
 
         error, f = ComputeTriangulationError(X, P1, P2, b)
         X_new = X
 
-        if previous_error - error < eps:
+        if previousError - error < eps:
             break
         else:
-            previous_error = error
+            previousError = error
     return X_new
 
 
@@ -139,24 +134,23 @@ def ComputePointJacobian(X, p):
 
     Returns
     -------
-    dfdX : ndarray of shape (2, 3)
+    J_X : ndarray of shape (2, 3)
         The point Jacobian
     """
     C = p[:3]
     q = p[3:]
     R = Quaternion2Rotation(q)
 
-    uvw = R @ (X - C)
-    duvw_dX = R
+    S1 = R @ (X - C)
+    dS1_dX = R
 
-    u, v, w = uvw[0], uvw[1], uvw[2]
-    du_dX, dv_dX, dw_dX = duvw_dX[0], duvw_dX[1], duvw_dX[2]
+    u, v, w = S1[0], S1[1], S1[2]
+    du_dX, dv_dX, dw_dX = dS1_dX[0], dS1_dX[1], dS1_dX[2]
 
-    dfdX = np.stack([(w*du_dX - u*dw_dX)/ w**2 , (w*dv_dX - v*dw_dX)/w**2])
-    assert dfdX.shape[0] == 2 and dfdX.shape[1] == 3
-
-    return dfdX
-
+    J_X = np.stack([(w * du_dX - u * dw_dX) / w ** 2, (w * dv_dX - v * dw_dX) / w ** 2])
+    if J_X.shape[0] != 2 or J_X.shape[1] != 3:
+        sys.exit("Incorrect Jacobian.")
+    return J_X
 
 
 def SetupBundleAdjustment(P, X, track):
@@ -185,7 +179,7 @@ def SetupBundleAdjustment(P, X, track):
     point_index : ndarray of shape (M,)
         The index of 3D point for each measurement
     """
-    
+
     K, J = P.shape[0], X.shape[0]
 
     z = []
@@ -195,22 +189,20 @@ def SetupBundleAdjustment(P, X, track):
         z.append(X[i])
     z = np.hstack(z)
 
-    mask_track = np.logical_and(track[:,:,0]!= -1, track[:,:,1]!= -1)
-    point_index, camera_index = np.nonzero(mask_track.transpose(1,0))
+    cdn1 = np.logical_and(track[:, :, 0] != -1, track[:, :, 1] != -1)
+    pointIndice, cameraIndice = np.nonzero(cdn1.transpose(1, 0))
 
-    b = track.transpose(1,0,2)[mask_track.transpose(1,0)].reshape(-1)
+    b = track.transpose(1, 0, 2)[cdn1.transpose(1, 0)].reshape(-1)
     M = int(b.shape[0] / 2)
 
-    S = np.zeros((2*M, 7*K+3*J))
+    S = np.zeros((2 * M, 7 * K + 3 * J))
     for m in range(M):
-        camera_id, pt_id = camera_index[m], point_index[m]
-        # do not update the first two camera poses through Jacobian
-        if camera_id != 0 and camera_id != 1:
-            S[2*m : 2*(m+1), 7*camera_id : 7*(camera_id+1)] = 1
-        S[2*m : 2*(m+1), 7*K + 3*pt_id : 7*K + 3*(pt_id+1)] = 1
+        c_id, p_id = cameraIndice[m], pointIndice[m]
+        if c_id != 0 and c_id != 1:
+            S[2 * m: 2 * (m + 1), 7 * c_id: 7 * (c_id + 1)] = 1
+        S[2 * m: 2 * (m + 1), 7 * K + 3 * p_id: 7 * K + 3 * (p_id + 1)] = 1
 
-    return z, b, S, camera_index, point_index
-    
+    return z, b, S, cameraIndice, pointIndice
 
 
 def MeasureReprojection(z, b, n_cameras, n_points, camera_index, point_index):
@@ -237,19 +229,17 @@ def MeasureReprojection(z, b, n_cameras, n_points, camera_index, point_index):
     err : ndarray of shape (2M,)
         The reprojection error
     """
-    
+
     P, X = UpdatePosePoint(z, n_cameras, n_points)
-    
-    rays = []
-    for c_idx, p_idx in zip(camera_index, point_index):
-        ray = P[c_idx] @ np.insert(X[p_idx], 3, 1)
-        rays.append(ray[:2] / ray[2])
-    rays = np.vstack(rays).reshape(-1)
+
+    projections = []
+    for c, p in zip(camera_index, point_index):
+        projection = P[c] @ np.insert(X[p], 3, 1)
+        projections.append(projection[:2] / projection[2])
+    rays = np.vstack(projections).reshape(-1)
 
     err = np.abs(rays - b)
-
     return err
-
 
 
 def UpdatePosePoint(z, n_cameras, n_points):
@@ -267,27 +257,27 @@ def UpdatePosePoint(z, n_cameras, n_points):
 
     Returns
     -------
-    P_new : ndarray of shape (K, 3, 4)
+    addedP : ndarray of shape (K, 3, 4)
         The set of refined camera poses
-    X_new : ndarray of shape (J, 3)
+    addedX : ndarray of shape (J, 3)
         The set of refined 3D points
     """
-    
-    P_new = np.zeros((n_cameras, 3, 4))
+
+    addedP = np.zeros((n_cameras, 3, 4))
     for i in range(n_cameras):
-        p = z[7*i : 7*(i+1)]
+        p = z[7 * i: 7 * (i + 1)]
         C = p[:3]
-        R = Quaternion2Rotation( p[3:] / np.linalg.norm(p[3:]) )
+        R = Quaternion2Rotation(p[3:] / np.linalg.norm(p[3:]))
         t = - R @ C
-        P_new[i] = np.hstack([R, t.reshape((3,1))])
+        addedP[i] = np.hstack([R, t.reshape((3, 1))])
 
-    X_new = z[7*n_cameras:].reshape((n_points, 3))
+    addedX = z[7 * n_cameras:].reshape((n_points, 3))
+    return addedP, addedX
 
-    return P_new, X_new
 
 def F(z, b, n_cameras, n_points, camera_index, point_index):
-    err = MeasureReprojection(z, b, n_cameras, n_points, camera_index, point_index)
-    return np.average(err)
+    error = MeasureReprojection(z, b, n_cameras, n_points, camera_index, point_index)
+    return np.average(error)
 
 
 def RunBundleAdjustment(P, X, track):
@@ -305,17 +295,17 @@ def RunBundleAdjustment(P, X, track):
 
     Returns
     -------
-    P_new : ndarray of shape (K, 3, 4)
+    addedP : ndarray of shape (K, 3, 4)
         The set of refined camera poses
-    X_new : ndarray of shape (J, 3)
+    addedX : ndarray of shape (J, 3)
         The set of refined 3D points
     """
 
-    n_cameras, n_points = P.shape[0], X.shape[0]
-    print('Running bundle adjustment for %d cameras and %d points'%(n_cameras, n_points))
-    z0, b, S, camera_index, point_index = SetupBundleAdjustment(P, X, track)
-    r = least_squares(MeasureReprojection, z0, args=(b, n_cameras, n_points, camera_index, point_index), 
-                    jac_sparsity=S)
+    allCameras, allPoints = P.shape[0], X.shape[0]
+    print('%d Camera Bundle Adjustment for %d points' % (allCameras, allPoints))
+    z0, b, S, cameraIndice, pointIndice = SetupBundleAdjustment(P, X, track)
+    r = least_squares(MeasureReprojection, z0, args=(b, allCameras, allPoints, cameraIndice, pointIndice),
+                      jac_sparsity=S)
 
-    P_new, X_new = UpdatePosePoint(r.x, n_cameras, n_points)
-    return P_new, X_new
+    addedP, addedX = UpdatePosePoint(r.x, allCameras, allPoints)
+    return addedP, addedX

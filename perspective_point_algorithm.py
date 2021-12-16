@@ -1,5 +1,5 @@
 import numpy as np
-
+import sys
 from final_camera_pose import EvaluateCheirality
 from utils import Rotation2Quaternion
 from utils import Quaternion2Rotation
@@ -83,7 +83,7 @@ def PnP_RANSAC(X, x, ransac_n_iter, ransacThreshold):
                    [0, 1, 0, 0],
                    [0, 0, 1, 0]])
 
-    print('Running PnP_RANSAC for %d pairs' % n)
+    print('PnP_RANSAC %d pairs' % n)
 
     for _ in range(ransac_n_iter):
         sampleIdx = np.random.choice(n, 6)
@@ -149,13 +149,15 @@ def ComputePoseJacobian(p, X):
     duvw_dq = duvw_dR @ dR_dq
 
     duvw_dp = np.hstack([duvw_dC, duvw_dq])
-    assert duvw_dp.shape[0] == 3 and duvw_dp.shape[1] == 7
+    if duvw_dp.shape[0] != 3 or duvw_dp.shape[1] != 7:
+        sys.exit("Incorrect Jacobian.")
 
     u, v, w = uvw[0], uvw[1], uvw[2]
     du_dp, dv_dp, dw_dp = duvw_dp[0], duvw_dp[1], duvw_dp[2]
 
     dfdp = np.stack([(w * du_dp - u * dw_dp) / w ** 2, (w * dv_dp - v * dw_dp) / w ** 2])
-    assert dfdp.shape[0] == 2 and dfdp.shape[1] == 7
+    if dfdp.shape[0] != 2 or dfdp.shape[1] != 7:
+        sys.exit("Incorrect Jacobian.")
 
     return dfdp
 
@@ -165,7 +167,7 @@ def ComputePnPError(R, C, X, b):
     Compute nonlinear PnP estimation error and 1D vector f
     """
     f = (X - C) @ R.T
-    f = f[:, :2] / f[:, -1:]  # non homogenize
+    f = f[:, :2] / f[:, -1:]
     error = np.average(np.linalg.norm(f - b.reshape(-1, 2), axis=1))
     return error, f.reshape(-1)
 
@@ -187,15 +189,13 @@ def PnP_nl(R, C, X, x):
 
     Returns
     -------
-    R_refined : ndarray of shape (3, 3)
+    RRefined : ndarray of shape (3, 3)
         The rotation matrix refined by nonlinear optimization
-    C_refined : ndarray of shape (3,)
+    CRefined : ndarray of shape (3,)
         The camera center refined by nonlinear optimization
     """
-    # maximum number of iterations
     maxIter = 50
-    # threshold for terminating gradient update
-    epsilon = 1e-3
+    eps = 1e-3
     dampingLambda = 1
     n = x.shape[0]
     b = x.reshape(-1)
@@ -203,15 +203,15 @@ def PnP_nl(R, C, X, x):
     previousError, f = ComputePnPError(R, C, X, b)
 
     for iter in range(maxIter):
-        print('Running nonlinear PnP iteration %d' % iter)
+        print(' %dth Nonlinear PnP iteration' % iter)
         p = np.concatenate([C, Rotation2Quaternion(R)])
 
-        # Compute Jacobian matrix and stack them
         dfdp = []
         for i in range(n):
             dfdp.append(ComputePoseJacobian(p, X[i]))
         dfdp = np.vstack(dfdp)  # 2n x 7
-        assert dfdp.shape[0] == 2 * n and dfdp.shape[1] == 7
+        if dfdp.shape[0] != 2 * n or dfdp.shape[1] != 7:
+            sys.exit("Incorrect Jacobian.")
 
         dp = np.linalg.inv(dfdp.T @ dfdp + dampingLambda * np.eye(7)) @ dfdp.T @ (b - f)
         C += dp[:3]
@@ -222,7 +222,7 @@ def PnP_nl(R, C, X, x):
         error, f = ComputePnPError(R, C, X, b)
         RRefined, CRefined = R, C
 
-        if previousError - error < epsilon:
+        if previousError - error < eps:
             break
         else:
             previousError = error
