@@ -1,4 +1,4 @@
-# CV_SFM
+# SfM
 Name: Structure from Motion
 Team: Samarth Shah, Aditya Mehrotra, Anujay Sharma, Aditya Patil
 
